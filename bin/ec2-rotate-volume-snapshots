@@ -47,7 +47,7 @@ def rotate_em(snapshots)
     time = Time.parse(snapshot[:aws_started_at])
     snapshot_id = snapshot[:aws_id]
     description = snapshot[:aws_description]
-    keep_reason = nil
+    snapshot[:keep_reason] = nil
     
     if $opts[:pattern] && description !~ /#{$opts[:pattern]}/
       puts "  #{time.strftime '%Y-%m-%d %H:%M:%S'} #{snapshot_id} Skipping snapshot with description #{description}"
@@ -62,7 +62,7 @@ def rotate_em(snapshots)
       time_string = time.strftime period_info[:format]
       if Time.now - time < keep * period_info[:seconds]
         if !keeping.key?(time_string) && keeping.length < keep
-          keep_reason = period
+          snapshot[:keep_reason] = period
           keeping[time_string] = snapshot
           if group_by_key
             group_bys.push(snapshot[:tags][group_by_key])
@@ -71,17 +71,24 @@ def rotate_em(snapshots)
         break
       end
     end
+  end
 
-    if group_by_key && keep_reason.nil? && group_bys.include?(snapshot[:tags][group_by_key])
-      keep_reason = "volume is associated with others by #{group_by_key}=#{snapshot[:tags][group_by_key]}"
+  snapshots.each do |snapshot|
+    if group_by_key && snapshot[:keep_reason].nil? && group_bys.include?(snapshot[:tags][group_by_key])
+      snapshot[:keep_reason] = "volume is associated with others by #{group_by_key}=#{snapshot[:tags][group_by_key]}"
     end
     
-    if keep_reason.nil? && snapshot == snapshots.last && $opts[:keep_last]
-      keep_reason = 'last snapshot'
+    if snapshot[:keep_reason].nil? && snapshot == snapshots.last && $opts[:keep_last]
+      snapshot[:keep_reason] = 'last snapshot'
     end
+  end
     
-    if !keep_reason.nil?
-      puts "  #{time.strftime '%Y-%m-%d %H:%M:%S'} #{snapshot_id} Keeping for #{keep_reason}"
+  snapshots.each do |snapshot|
+    snapshot_id = snapshot[:aws_id]
+    description = snapshot[:aws_description]
+    time = Time.parse(snapshot[:aws_started_at])
+    if !snapshot[:keep_reason].nil?
+      puts "  #{time.strftime '%Y-%m-%d %H:%M:%S'} #{snapshot_id} Keeping for #{snapshot[:keep_reason]}"
     else
       puts "  #{time.strftime '%Y-%m-%d %H:%M:%S'} #{snapshot_id} Deleting"
       begin
