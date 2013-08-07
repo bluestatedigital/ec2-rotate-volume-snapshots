@@ -11,7 +11,8 @@ $opts = {
   :pattern => nil,
   :by_tags => nil,
   :dry_run => false,
-  :backoff_limit => 0
+  :backoff_limit => 0,
+  :group_by => nil
 }
 
 $time_periods = {
@@ -37,6 +38,10 @@ end
 def rotate_em(snapshots)
   # poor man's way to get a deep copy of our time_periods definition hash
   periods = Marshal.load(Marshal.dump($time_periods))
+  if $opts[:group_by]
+    group_bys = []
+    group_by_key = $opts[:group_by]
+  end
   
   snapshots.each do |snapshot|
     time = Time.parse(snapshot[:aws_started_at])
@@ -59,9 +64,16 @@ def rotate_em(snapshots)
         if !keeping.key?(time_string) && keeping.length < keep
           keep_reason = period
           keeping[time_string] = snapshot
+          if group_by_key
+            group_bys.push(snapshot[:tags][group_by_key])
+          end
         end
         break
       end
+    end
+
+    if group_by_key && keep_reason.nil? && group_bys.include?(snapshot[:tags][group_by_key])
+      keep_reason = "volume is associated with others by #{group_by_key}=#{snapshot[:tags][group_by_key]}"
     end
     
     if keep_reason.nil? && snapshot == snapshots.last && $opts[:keep_last]
@@ -146,6 +158,10 @@ OptionParser.new do |o|
 
   o.on("--dry-run", "Shows what would happen without doing anything") do |v|
     $opts[:dry_run] = true
+  end
+
+  o.on("--group-by TAG", "Saves any volumes that have the same value for this tag key") do |v|
+    $opts[:group_by] = v
   end
 end.parse!
 
